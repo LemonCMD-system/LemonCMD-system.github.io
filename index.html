@@ -339,6 +339,16 @@
                                 <i class="fas fa-folder-plus"></i>
                                 <span>新建文件夹</span>
                             </button>
+                            
+                            <button id="my-shares-btn" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2">
+                                <i class="fas fa-share-alt"></i>
+                                <span>我的分享</span>
+                            </button>
+                            
+                            <button id="paste-btn" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2" style="display: none;">
+                                <i class="fas fa-paste"></i>
+                                <span>粘贴</span>
+                            </button>
                         </div>
                     </div>
                     
@@ -545,6 +555,10 @@
         let userFiles = [];
         let userFolders = [];
         let isGridView = true;
+        let clipboard = {
+            items: [],
+            action: 'copy' // 'copy' or 'cut'
+        };
 
         // DOM 元素
         const elements = {
@@ -591,6 +605,7 @@
             fileSearch: document.getElementById('file-search'),
             uploadBtn: document.getElementById('upload-btn'),
             createFolderBtn: document.getElementById('create-folder-btn'),
+            pasteBtn: document.getElementById('paste-btn'),
             usedStorage: document.getElementById('used-storage'),
             totalStorage: document.getElementById('total-storage'),
             fileCount: document.getElementById('file-count'),
@@ -701,11 +716,16 @@
             // 存储界面事件
             elements.uploadBtn.addEventListener('click', openUploadModal);
             elements.createFolderBtn.addEventListener('click', openCreateFolderModal);
+            elements.pasteBtn.addEventListener('click', pasteItems);
             document.getElementById('empty-upload-btn').addEventListener('click', openUploadModal);
+            document.getElementById('my-shares-btn').addEventListener('click', showMyShares);
             elements.gridViewBtn.addEventListener('click', switchToGridView);
             elements.listViewBtn.addEventListener('click', switchToListView);
             elements.sortOption.addEventListener('change', renderFiles);
             elements.fileSearch.addEventListener('input', handleFileSearch);
+            
+            // 初始化粘贴按钮状态
+            updatePasteButtonVisibility();
             
             // 上传事件
             elements.uploadArea.addEventListener('click', () => elements.fileInput.click());
@@ -1274,18 +1294,698 @@
                 updateStorageDisplay();
             } else {
                 // 下载文件
-                showNotification('文件下载功能将在未来版本中实现', 'info');
+                downloadFile(item);
             }
         }
 
         // 处理项目菜单点击
         function handleItemMenuClick(itemId, itemType) {
-            showNotification('文件操作功能将在未来版本中实现', 'info');
+            showItemMenu(itemId, itemType);
         }
 
         // 处理文件搜索
         function handleFileSearch() {
             renderFiles();
+        }
+
+        // 下载文件
+        function downloadFile(file) {
+            if (!file) return;
+            
+            // 创建模拟文件内容（实际应用中应该从服务器获取文件内容）
+            const fileContent = `这是文件 "${file.name}" 的模拟内容。
+在实际应用中，这里会从服务器获取真实的文件内容。
+
+文件信息：
+- 文件名：${file.name}
+- 文件大小：${formatFileSize(file.size)}
+- 创建时间：${formatDate(file.createdAt)}
+- 修改时间：${formatDate(file.updatedAt)}`;
+            
+            // 创建Blob对象
+            const blob = new Blob([fileContent], { type: 'text/plain' });
+            
+            // 创建下载链接
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            
+            // 触发下载
+            document.body.appendChild(a);
+            a.click();
+            
+            // 清理
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+            
+            showNotification(`文件 "${file.name}" 下载已开始`, 'success');
+        }
+
+        // 显示项目菜单
+        function showItemMenu(itemId, itemType) {
+            const item = itemType === 'file' 
+                ? userFiles.find(f => f.id === itemId)
+                : userFolders.find(f => f.id === itemId);
+            
+            if (!item) return;
+            
+            // 创建菜单
+            const menu = document.createElement('div');
+            menu.className = 'fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200';
+            menu.style.minWidth = '200px';
+            menu.style.position = 'fixed';
+            menu.style.top = '50%';
+            menu.style.left = '50%';
+            menu.style.transform = 'translate(-50%, -50%)';
+            
+            // 菜单项
+            const menuItems = [
+                {
+                    icon: 'fas fa-download',
+                    text: '下载',
+                    action: () => {
+                        if (itemType === 'file') {
+                            downloadFile(item);
+                        } else {
+                            showNotification('文件夹下载功能将在未来版本中实现', 'info');
+                        }
+                        closeMenu();
+                    }
+                },
+                {
+                    icon: 'fas fa-share-alt',
+                    text: '分享',
+                    action: () => {
+                        showShareDialog(item);
+                        closeMenu();
+                    }
+                },
+                {
+                    icon: 'fas fa-copy',
+                    text: '复制',
+                    action: () => {
+                        clipboard.items = [item];
+                        clipboard.action = 'copy';
+                        updateClipboard();
+                        showNotification(`${item.type === 'file' ? '文件' : '文件夹'} 已复制到剪贴板`, 'success');
+                        closeMenu();
+                    }
+                },
+                {
+                    icon: 'fas fa-cut',
+                    text: '剪切',
+                    action: () => {
+                        clipboard.items = [item];
+                        clipboard.action = 'cut';
+                        updateClipboard();
+                        showNotification(`${item.type === 'file' ? '文件' : '文件夹'} 已剪切到剪贴板`, 'success');
+                        closeMenu();
+                    }
+                },
+                {
+                    icon: 'fas fa-trash-alt',
+                    text: '删除',
+                    action: () => {
+                        showDeleteConfirmDialog(item);
+                        closeMenu();
+                    }
+                },
+                {
+                    icon: 'fas fa-info-circle',
+                    text: '属性',
+                    action: () => {
+                        showItemInfo(item);
+                        closeMenu();
+                    }
+                }
+            ];
+            
+            // 添加菜单项
+            menuItems.forEach((item, index) => {
+                const menuItem = document.createElement('div');
+                menuItem.className = 'px-4 py-3 flex items-center space-x-3 hover:bg-gray-50 cursor-pointer transition-colors';
+                if (index > 0) {
+                    menuItem.classList.add('border-t', 'border-gray-100');
+                }
+                
+                menuItem.innerHTML = `
+                    <i class="${item.icon} text-gray-600"></i>
+                    <span class="text-sm text-gray-700">${item.text}</span>
+                `;
+                
+                menuItem.addEventListener('click', item.action);
+                menu.appendChild(menuItem);
+            });
+            
+            // 创建背景遮罩
+            const backdrop = document.createElement('div');
+            backdrop.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm z-40';
+            
+            // 添加到页面
+            document.body.appendChild(backdrop);
+            document.body.appendChild(menu);
+            
+            // 关闭菜单函数
+            function closeMenu() {
+                document.body.removeChild(menu);
+                document.body.removeChild(backdrop);
+            }
+            
+            // 点击背景关闭菜单
+            backdrop.addEventListener('click', closeMenu);
+        }
+
+        // 显示分享对话框
+        function showShareDialog(item) {
+            // 创建分享对话框
+            const dialog = document.createElement('div');
+            dialog.className = 'fixed z-50 bg-white rounded-2xl p-8 max-w-md w-full mx-4';
+            dialog.style.position = 'fixed';
+            dialog.style.top = '50%';
+            dialog.style.left = '50%';
+            dialog.style.transform = 'translate(-50%, -50%)';
+            
+            // 生成分享链接
+            const shareLink = `https://LemonCMD-system.github.io/share/${item.id}?token=${generateShareToken(item.id)}`;
+            
+            dialog.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-dark">分享 ${item.type === 'file' ? '文件' : '文件夹'}</h2>
+                    <button id="close-share-dialog" class="text-gray-400 hover:text-gray-600 transition-colors p-1">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-700 mb-3">${item.name}</h3>
+                        <p class="text-sm text-gray-500">${item.type === 'file' ? formatFileSize(item.size) : '文件夹'}</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">分享链接</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="text" value="${shareLink}" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors" readonly id="share-link">
+                            <button id="copy-share-link" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">分享权限</label>
+                        <select class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors">
+                            <option value="view">仅查看</option>
+                            <option value="edit">可编辑</option>
+                            <option value="download">可下载</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">有效期</label>
+                        <select class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors">
+                            <option value="1d">1天</option>
+                            <option value="7d">7天</option>
+                            <option value="30d">30天</option>
+                            <option value="never">永久有效</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex space-x-4">
+                        <button id="cancel-share" class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                            取消
+                        </button>
+                        <button id="create-share" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                            创建分享
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // 创建背景遮罩
+            const backdrop = document.createElement('div');
+            backdrop.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm z-40';
+            
+            // 添加到页面
+            document.body.appendChild(backdrop);
+            document.body.appendChild(dialog);
+            
+            // 绑定事件
+            document.getElementById('close-share-dialog').addEventListener('click', closeDialog);
+            document.getElementById('cancel-share').addEventListener('click', closeDialog);
+            document.getElementById('copy-share-link').addEventListener('click', () => {
+                const linkInput = document.getElementById('share-link');
+                linkInput.select();
+                document.execCommand('copy');
+                showNotification('分享链接已复制到剪贴板', 'success');
+            });
+            
+            document.getElementById('create-share').addEventListener('click', () => {
+                // 保存分享信息
+                saveShareInfo(item, shareLink);
+                showNotification('分享链接已创建', 'success');
+                closeDialog();
+            });
+            
+            // 关闭对话框函数
+            function closeDialog() {
+                document.body.removeChild(dialog);
+                document.body.removeChild(backdrop);
+            }
+            
+            // 点击背景关闭对话框
+            backdrop.addEventListener('click', closeDialog);
+        }
+
+        // 生成分享令牌
+        function generateShareToken(itemId) {
+            return btoa(itemId + Date.now());
+        }
+
+        // 保存分享信息
+        function saveShareInfo(item, shareLink) {
+            const shares = JSON.parse(localStorage.getItem('shares')) || [];
+            
+            const shareInfo = {
+                id: Date.now().toString(),
+                itemId: item.id,
+                itemType: item.type,
+                ownerId: currentUser.id,
+                shareLink: shareLink,
+                createdAt: new Date().toISOString(),
+                expiresAt: calculateExpirationDate(),
+                permission: 'view'
+            };
+            
+            shares.push(shareInfo);
+            localStorage.setItem('shares', JSON.stringify(shares));
+        }
+
+        // 计算过期日期
+        function calculateExpirationDate() {
+            // 默认7天有效期
+            const date = new Date();
+            date.setDate(date.getDate() + 7);
+            return date.toISOString();
+        }
+
+        // 显示删除确认对话框
+        function showDeleteConfirmDialog(item) {
+            if (confirm(`确定要删除 ${item.type === 'file' ? '文件' : '文件夹'} "${item.name}" 吗？`)) {
+                if (item.type === 'file') {
+                    // 从文件列表中移除
+                    userFiles = userFiles.filter(f => f.id !== item.id);
+                    // 更新存储空间
+                    currentUser.storage.used -= item.size;
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    // 更新用户列表
+                    const users = JSON.parse(localStorage.getItem('users')) || [];
+                    const userIndex = users.findIndex(u => u.id === currentUser.id);
+                    if (userIndex !== -1) {
+                        users[userIndex].storage.used = currentUser.storage.used;
+                        localStorage.setItem('users', JSON.stringify(users));
+                    }
+                } else {
+                    // 从文件夹列表中移除
+                    userFolders = userFolders.filter(f => f.id !== item.id);
+                }
+                
+                // 保存更改
+                saveUserFiles();
+                renderFiles();
+                updateStorageDisplay();
+                showNotification(`${item.type === 'file' ? '文件' : '文件夹'} 已删除`, 'success');
+            }
+        }
+
+        // 显示项目信息
+        function showItemInfo(item) {
+            // 创建信息对话框
+            const dialog = document.createElement('div');
+            dialog.className = 'fixed z-50 bg-white rounded-2xl p-8 max-w-md w-full mx-4';
+            dialog.style.position = 'fixed';
+            dialog.style.top = '50%';
+            dialog.style.left = '50%';
+            dialog.style.transform = 'translate(-50%, -50%)';
+            
+            dialog.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-dark">${item.type === 'file' ? '文件' : '文件夹'} 属性</h2>
+                    <button id="close-info-dialog" class="text-gray-400 hover:text-gray-600 transition-colors p-1">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">名称</label>
+                            <p class="text-sm text-gray-700">${item.name}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">类型</label>
+                            <p class="text-sm text-gray-700">${item.type === 'file' ? '文件' : '文件夹'}</p>
+                        </div>
+                    </div>
+                    
+                    ${item.type === 'file' ? `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">大小</label>
+                            <p class="text-sm text-gray-700">${formatFileSize(item.size)}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">扩展名</label>
+                            <p class="text-sm text-gray-700">${item.extension.toUpperCase()}</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">位置</label>
+                            <p class="text-sm text-gray-700">${item.path}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">所有者</label>
+                            <p class="text-sm text-gray-700">${currentUser.username}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">创建时间</label>
+                            <p class="text-sm text-gray-700">${formatDate(item.createdAt)}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">修改时间</label>
+                            <p class="text-sm text-gray-700">${formatDate(item.updatedAt)}</p>
+                        </div>
+                    </div>
+                    
+                    ${item.description ? `
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">描述</label>
+                        <p class="text-sm text-gray-700">${item.description}</p>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="mt-6 flex justify-end">
+                        <button id="close-info-btn" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                            确定
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // 创建背景遮罩
+            const backdrop = document.createElement('div');
+            backdrop.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm z-40';
+            
+            // 添加到页面
+            document.body.appendChild(backdrop);
+            document.body.appendChild(dialog);
+            
+            // 绑定事件
+            document.getElementById('close-info-dialog').addEventListener('click', closeDialog);
+            document.getElementById('close-info-btn').addEventListener('click', closeDialog);
+            
+            // 关闭对话框函数
+            function closeDialog() {
+                document.body.removeChild(dialog);
+                document.body.removeChild(backdrop);
+            }
+            
+            // 点击背景关闭对话框
+            backdrop.addEventListener('click', closeDialog);
+        }
+
+        // 显示我的分享
+        function showMyShares() {
+            if (!currentUser) return;
+            
+            // 获取当前用户的所有分享
+            const shares = JSON.parse(localStorage.getItem('shares')) || [];
+            const myShares = shares.filter(share => share.ownerId === currentUser.id);
+            
+            // 创建分享管理对话框
+            const dialog = document.createElement('div');
+            dialog.className = 'fixed z-50 bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto';
+            dialog.style.position = 'fixed';
+            dialog.style.top = '50%';
+            dialog.style.left = '50%';
+            dialog.style.transform = 'translate(-50%, -50%)';
+            
+            // 生成分享列表HTML
+            let sharesHtml = '';
+            if (myShares.length === 0) {
+                sharesHtml = `
+                    <div class="text-center py-12">
+                        <i class="fas fa-share-alt text-6xl text-gray-300 mb-4"></i>
+                        <h3 class="text-xl font-semibold text-gray-700 mb-2">您还没有分享任何文件</h3>
+                        <p class="text-gray-600">点击文件右侧的分享按钮开始分享</p>
+                    </div>
+                `;
+            } else {
+                myShares.forEach(share => {
+                    // 获取分享的文件或文件夹信息
+                    let item = null;
+                    if (share.itemType === 'file') {
+                        item = userFiles.find(f => f.id === share.itemId);
+                    } else {
+                        item = userFolders.find(f => f.id === share.itemId);
+                    }
+                    
+                    if (item) {
+                        const isExpired = new Date(share.expiresAt) < new Date();
+                        const timeLeft = calculateTimeLeft(share.expiresAt);
+                        
+                        sharesHtml += `
+                            <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg mb-3 ${isExpired ? 'opacity-50' : ''}">
+                                <div class="flex items-center space-x-4">
+                                    <div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-${share.itemType === 'file' ? 'file' : 'folder'} text-gray-600 text-xl"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-700">${item.name}</h4>
+                                        <p class="text-sm text-gray-500">${share.itemType === 'file' ? formatFileSize(item.size) : '文件夹'}</p>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            ${isExpired ? '已过期' : `剩余 ${timeLeft}`}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button class="px-3 py-1 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm" onclick="copyShareLink('${share.shareLink}')">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm" onclick="deleteShare('${share.id}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+            }
+            
+            dialog.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-dark">我的分享</h2>
+                    <button id="close-shares-dialog" class="text-gray-400 hover:text-gray-600 transition-colors p-1">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div id="shares-list">
+                    ${sharesHtml}
+                </div>
+                
+                ${myShares.length > 0 ? `
+                <div class="mt-6 flex justify-between items-center">
+                    <p class="text-sm text-gray-500">
+                        共 ${myShares.length} 个分享
+                    </p>
+                    <button id="clear-expired-shares" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm">
+                        清理过期分享
+                    </button>
+                </div>
+                ` : ''}
+            `;
+            
+            // 创建背景遮罩
+            const backdrop = document.createElement('div');
+            backdrop.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm z-40';
+            
+            // 添加到页面
+            document.body.appendChild(backdrop);
+            document.body.appendChild(dialog);
+            
+            // 绑定事件
+            document.getElementById('close-shares-dialog').addEventListener('click', closeDialog);
+            
+            if (myShares.length > 0) {
+                document.getElementById('clear-expired-shares').addEventListener('click', () => {
+                    clearExpiredShares();
+                    closeDialog();
+                    showMyShares(); // 重新显示分享列表
+                });
+            }
+            
+            // 关闭对话框函数
+            function closeDialog() {
+                document.body.removeChild(dialog);
+                document.body.removeChild(backdrop);
+            }
+            
+            // 点击背景关闭对话框
+            backdrop.addEventListener('click', closeDialog);
+        }
+
+        // 计算剩余时间
+        function calculateTimeLeft(expiresAt) {
+            const now = new Date();
+            const expireDate = new Date(expiresAt);
+            const diff = expireDate - now;
+            
+            if (diff <= 0) return '已过期';
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            if (days > 0) {
+                return `${days}天${hours}小时`;
+            } else if (hours > 0) {
+                return `${hours}小时${minutes}分钟`;
+            } else {
+                return `${minutes}分钟`;
+            }
+        }
+
+        // 复制分享链接
+        function copyShareLink(shareLink) {
+            const input = document.createElement('input');
+            input.value = shareLink;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            showNotification('分享链接已复制到剪贴板', 'success');
+        }
+
+        // 删除分享
+        function deleteShare(shareId) {
+            if (confirm('确定要删除这个分享吗？')) {
+                const shares = JSON.parse(localStorage.getItem('shares')) || [];
+                const updatedShares = shares.filter(share => share.id !== shareId);
+                localStorage.setItem('shares', JSON.stringify(updatedShares));
+                showNotification('分享已删除', 'success');
+                
+                // 重新显示分享列表
+                const dialog = document.querySelector('.fixed.z-50.bg-white');
+                const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50');
+                if (dialog && backdrop) {
+                    document.body.removeChild(dialog);
+                    document.body.removeChild(backdrop);
+                    showMyShares();
+                }
+            }
+        }
+
+        // 清理过期分享
+        function clearExpiredShares() {
+            const shares = JSON.parse(localStorage.getItem('shares')) || [];
+            const now = new Date();
+            const activeShares = shares.filter(share => new Date(share.expiresAt) > now);
+            localStorage.setItem('shares', JSON.stringify(activeShares));
+            showNotification('过期分享已清理', 'success');
+        }
+
+        // 将函数添加到全局作用域，以便在HTML中可以直接调用
+        window.copyShareLink = copyShareLink;
+        window.deleteShare = deleteShare;
+
+        // 更新粘贴按钮的可见性
+        function updatePasteButtonVisibility() {
+            if (clipboard.items.length > 0) {
+                elements.pasteBtn.style.display = 'flex';
+            } else {
+                elements.pasteBtn.style.display = 'none';
+            }
+        }
+
+        // 粘贴项目
+        function pasteItems() {
+            if (clipboard.items.length === 0) return;
+            
+            let pastedCount = 0;
+            
+            clipboard.items.forEach(item => {
+                // 检查目标路径是否已经存在同名文件或文件夹
+                const isFileExists = userFiles.some(f => 
+                    f.name === item.name && f.path === currentPath && f.owner === currentUser.id
+                );
+                const isFolderExists = userFolders.some(f => 
+                    f.name === item.name && f.path === currentPath && f.owner === currentUser.id
+                );
+                
+                if (isFileExists || isFolderExists) {
+                    showNotification(`已存在同名${item.type === 'file' ? '文件' : '文件夹'}`, 'error');
+                    return;
+                }
+                
+                // 创建新项目
+                let newItem;
+                if (item.type === 'file') {
+                    newItem = {
+                        ...item,
+                        id: Date.now() + Math.random().toString(36).substr(2, 9),
+                        path: currentPath,
+                        updatedAt: new Date().toISOString()
+                    };
+                    userFiles.push(newItem);
+                } else {
+                    newItem = {
+                        ...item,
+                        id: Date.now() + Math.random().toString(36).substr(2, 9),
+                        path: currentPath,
+                        updatedAt: new Date().toISOString()
+                    };
+                    userFolders.push(newItem);
+                }
+                
+                // 如果是剪切操作，需要从原位置删除
+                if (clipboard.action === 'cut') {
+                    if (item.type === 'file') {
+                        userFiles = userFiles.filter(f => f.id !== item.id);
+                    } else {
+                        userFolders = userFolders.filter(f => f.id !== item.id);
+                    }
+                }
+                
+                pastedCount++;
+            });
+            
+            // 清空剪贴板
+            clipboard.items = [];
+            updatePasteButtonVisibility();
+            
+            // 保存更改
+            saveUserFiles();
+            renderFiles();
+            updateStorageDisplay();
+            
+            if (pastedCount > 0) {
+                showNotification(`${pastedCount} 个项目已${clipboard.action === 'cut' ? '移动' : '复制'}到当前文件夹`, 'success');
+            }
+        }
+
+        // 在复制或剪切后更新粘贴按钮可见性
+        function updateClipboard() {
+            updatePasteButtonVisibility();
         }
 
         // 切换到网格视图
